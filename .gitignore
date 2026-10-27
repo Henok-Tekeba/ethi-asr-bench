@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Testing and type-checking caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+*.whl
+
+# Local state and generated metadata
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+metadata.json
+metadata-*.json
+history.json
+records.json
+exports/
+.tmp/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Hugging Face / model caches (local only)
+.cache/
+hf-cache/
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

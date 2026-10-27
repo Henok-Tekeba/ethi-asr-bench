@@ -1,0 +1,17 @@
+# EthiASR Bench sample batch
+#
+# One repository ID or HTTPS model URL per line.
+# Blank lines and lines beginning with '#' are ignored.
+# A repeated repository/revision pair is reported as a duplicate.
+# A failure or invalid line does not stop the rest of the batch.
+
+b1n1yam/shook-medium-amharic-2k
+
+# URL form of the same repository (will be reported as a duplicate above)
+# https://huggingface.co/b1n1yam/shook-medium-amharic-2k
+
+# Another public ASR repository, useful for comparing metadata shapes.
+facebook/wav2vec2-base-960h
+
+# Pin a branch, tag, or commit with a URL path:
+# https://huggingface.co/b1n1yam/shook-medium-amharic-2k/tree/main

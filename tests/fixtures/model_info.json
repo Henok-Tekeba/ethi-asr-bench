@@ -1,0 +1,56 @@
+{
+  "id": "b1n1yam/shook-medium-amharic-2k",
+  "modelId": "b1n1yam/shook-medium-amharic-2k",
+  "author": "b1n1yam",
+  "sha": "60b7ae174266ed42362ee02e636aea144011378d",
+  "private": false,
+  "gated": false,
+  "disabled": false,
+  "pipeline_tag": "automatic-speech-recognition",
+  "library_name": "transformers",
+  "tags": [
+    "transformers",
+    "safetensors",
+    "whisper",
+    "am",
+    "license:apache-2.0",
+    "automatic-speech-recognition",
+    "generated_from_trainer"
+  ],
+  "downloads": 212,
+  "likes": 0,
+  "createdAt": "2025-12-08T16:17:17Z",
+  "lastModified": "2025-12-12T12:29:52Z",
+  "cardData": {
+    "library_name": "transformers",
+    "language": ["am"],
+    "license": "apache-2.0",
+    "metrics": ["wer"],
+    "tags": ["generated_from_trainer"]
+  },
+  "config": {
+    "architectures": ["WhisperForConditionalGeneration"],
+    "model_type": "whisper"
+  },
+  "transformersInfo": {
+    "auto_model": "AutoModelForSpeechSeq2Seq",
+    "custom_class": null,
+    "pipeline_tag": "automatic-speech-recognition",
+    "processor": "AutoProcessor"
+  },
+  "safetensors": {
+    "parameters": {"F32": 763857920},
+    "total": 763857920
+  },
+  "siblings": [
+    {"rfilename": ".gitattributes", "size": 1519},
+    {"rfilename": "README.md", "size": 3019},
+    {"rfilename": "config.json", "size": 1328},
+    {"rfilename": "generation_config.json", "size": 200},
+    {"rfilename": "model.safetensors", "size": 3055550401},
+    {"rfilename": "preprocessor_config.json", "size": 1000},
+    {"rfilename": "tokenizer.json", "size": 34604},
+    {"rfilename": "tokenizer_config.json", "size": 1200},
+    {"rfilename": "training_args.bin", "size": 5000}
+  ]
+}

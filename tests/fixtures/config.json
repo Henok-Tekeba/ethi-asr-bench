@@ -1,0 +1,15 @@
+{
+  "architectures": ["WhisperForConditionalGeneration"],
+  "model_type": "whisper",
+  "d_model": 1024,
+  "encoder_layers": 24,
+  "decoder_layers": 24,
+  "num_mel_bins": 80,
+  "vocab_size": 51865,
+  "tokenizer_config": {
+    "bos_token": "<|startoftranscript|>",
+    "eos_token": "<|endoftext|>",
+    "pad_token": "<|endoftext|>",
+    "unk_token": "<|endoftext|>"
+  }
+}
