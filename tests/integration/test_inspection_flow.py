@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,8 +11,10 @@ import pytest
 from tests.conftest import COMMIT, FIXED_TIME, FakeProvider, make_snapshot
 
 from ethi_asr_bench.errors import ErrorCode, ProviderError, StorageError
+from ethi_asr_bench.models.compatibility import CompatibilityClass
 from ethi_asr_bench.models.repository import InspectionStatus
 from ethi_asr_bench.services.batch import BatchItemStatus, run_batch
+from ethi_asr_bench.services.classifier import classify_record
 from ethi_asr_bench.services.exporter import build_export_payload, serialize_export
 from ethi_asr_bench.services.inspection import InspectionService
 from ethi_asr_bench.services.link_parser import parse_batch_text, parse_repository_target
@@ -188,6 +192,45 @@ def test_batch_all_invalid_does_not_require_a_store() -> None:
     assert report.summary.invalid == 2
     assert report.summary.exit_code == 2
     assert all(item.record is None for item in report.items)
+
+
+def test_stage1_record_can_be_classified_without_a_schema_migration(
+    repository_store: SQLiteRepositoryStore,
+    sample_snapshot: object,
+    tmp_path: Path,
+) -> None:
+    service = InspectionService(
+        FakeProvider(snapshots={EXAMPLE_ID: sample_snapshot}),
+        repository_store,
+        clock=lambda: FIXED_TIME,
+    )
+    outcome = service.inspect(parse_repository_target(EXAMPLE_ID))
+    database_path = tmp_path / "records.db"
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        version_before = connection.execute("PRAGMA user_version").fetchone()[0]
+        tables_before = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            )
+        }
+        stored = repository_store.get_latest(EXAMPLE_ID)
+        assert stored is not None
+        assessment = classify_record(stored.record)
+        version_after = connection.execute("PRAGMA user_version").fetchone()[0]
+        tables_after = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            )
+        }
+
+    assert assessment.classification is CompatibilityClass.STANDARD_WHISPER_CANDIDATE
+    assert outcome.record == stored.record
+    assert version_before == version_after == 1
+    assert tables_before == tables_after
+    assert "compatibility_assessments" not in tables_after
 
 
 def test_utc_now_is_timezone_aware() -> None:

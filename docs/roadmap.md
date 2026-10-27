@@ -1,8 +1,8 @@
 # Roadmap
 
-This roadmap is a plan, not a statement of existing capability. Stage 1 is the only
-implemented stage. Completion criteria are intentionally concrete so progress can be
-reviewed and so later stages do not inherit vague claims.
+This roadmap is a plan, not a statement of existing capability. Stages 1 and 2 are
+implemented; later stages are not. Completion criteria are intentionally concrete so
+progress can be reviewed and so later stages do not inherit vague claims.
 
 ## Guiding rules
 
@@ -12,7 +12,7 @@ reviewed and so later stages do not inherit vague claims.
 4. Never present a partial or unverified result as a benchmark result.
 5. Prefer small, reviewable increments over speculative infrastructure.
 
-## Stage 1 — Metadata foundation (current)
+## Stage 1 — Metadata foundation (complete)
 
 **Goal:** discover and inspect Hugging Face model repositories safely; normalize and
 persist metadata without downloading weights or running code.
@@ -46,34 +46,50 @@ Completion criteria:
   as unavailable.
 - [x] No model weights are downloaded and no repository code is executed.
 
-Known Stage 1 boundaries are listed in the root README.
+Known Stage 1 boundaries are listed in the root README; Stage 2 classifier
+limitations are listed in [`compatibility.md`](compatibility.md).
 
-## Stage 2 — Compatibility classification
+## Stage 2 — Compatibility classification (complete)
 
 **Goal:** turn structured metadata into explicit, evidence-backed compatibility classes
 without running models.
 
-Planned work:
+Implemented:
 
-- Define a separate, versioned `CompatibilityAssessment` contract.
-- Classify only from structured configuration, known library declarations, file
-  formats, and explicit rules.
-- Record rule identifiers and evidence for every class.
-- Represent `unknown` and `unsupported` distinctly.
-- Add fixtures for Whisper, other ASR families, non-ASR models, malformed configs, and
-  custom-code repositories.
-- Add regression tests for repositories whose names or descriptions mention a family
-  that their configuration does not declare.
-- Expose `ethi-asr classify` or an extension of `show`, without rewriting stored
-  metadata.
+- [x] Separate, versioned `CompatibilityAssessment` contract (`classifier_version`
+  `1.0.0`).
+- [x] Four explicit classes: `standard_whisper_candidate`, `known_variation`,
+  `custom_implementation_required`, and `insufficient_information`.
+- [x] Rules use structured architecture, `model_type`, task, library, `auto_map`, and
+  file-inventory signals. Model-card prose and repository names are not family
+  evidence.
+- [x] Every verdict includes rule identifiers, human-readable reasons, structured
+  warnings, and evidence labeled `observed` or `assumption`.
+- [x] Missing and malformed metadata produce `insufficient_information`; conflicting
+  structured signals are reported rather than guessed.
+- [x] `auto_map` forces `custom_implementation_required` without resolving or
+  downloading repository code.
+- [x] Initial allowlist for standard Whisper and known ASR variations.
+- [x] `ethi-asr classify` reads a stored record, supports `--revision` and `--json`,
+  and performs no provider call.
+- [x] No database table or migration; Stage 1 records remain readable.
+- [x] Unit and integration tests for Whisper, known variations, missing metadata,
+  conflicts, unsupported architectures, malformed metadata, custom-code signals, and
+  Stage 1 database compatibility.
+- [x] Rules, limitations, allowlist, and examples documented in
+  [`compatibility.md`](compatibility.md).
 
 Completion criteria:
 
-- Every verdict has machine-readable evidence.
-- No verdict relies on model-card prose alone.
-- Classification remains offline-testable.
-- Custom code is still never downloaded or executed.
-- Existing Stage 1 records remain readable.
+- [x] Every verdict has machine-readable evidence.
+- [x] No verdict relies on model-card prose alone.
+- [x] Classification remains offline-testable.
+- [x] Custom code is still never downloaded or executed.
+- [x] Existing Stage 1 records remain readable.
+- [x] The classification result distinguishes observed facts from assumptions.
+- [x] The CLI report is separate from the historical metadata record.
+
+Known limitations are documented in [`compatibility.md`](compatibility.md).
 
 ## Stage 3 — Isolated execution environments
 
@@ -184,7 +200,7 @@ The roadmap does not promise:
 - a state-of-the-art Amharic model;
 - automatic trust in model-card metrics;
 - execution of arbitrary repository code without isolation;
-- a hosted service in Stage 1;
+- a hosted service in Stages 1–2;
 - benchmark rankings before evaluation infrastructure is trustworthy.
 
 ## How to propose a change

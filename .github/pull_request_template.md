@@ -5,6 +5,7 @@ What problem does this change solve, and what is the user-visible effect?
 ## Scope
 
 - [ ] Stage 1 metadata foundation
+- [ ] Stage 2 compatibility classification
 - [ ] Documentation or tooling only
 - [ ] Extension point for a later stage (explain below)
 

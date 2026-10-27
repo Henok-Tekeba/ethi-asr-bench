@@ -213,6 +213,45 @@ def test_list_show_export_and_delete_flow(tmp_path: Path, cli_provider: FakeProv
     assert json.loads(invoke(db, "list", "--json").stdout)["count"] == 0
 
 
+def test_classify_uses_stored_record_without_network_or_reinspection(
+    tmp_path: Path, cli_provider: FakeProvider
+) -> None:
+    db = tmp_path / "records.db"
+    assert invoke(db, "inspect", EXAMPLE_ID, "--json").exit_code == 0
+    calls_after_inspection = len(cli_provider.calls)
+
+    result = invoke(db, "classify", EXAMPLE_ID, "--json")
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["classification"] == "standard_whisper_candidate"
+    assert payload["classifier_version"] == "1.0.0"
+    assert payload["inspection_schema_version"] == "1.0.0"
+    assert payload["evidence"]
+    assert any(item["kind"] == "observed" for item in payload["evidence"])
+    assert any(item["kind"] == "assumption" for item in payload["evidence"])
+    assert len(cli_provider.calls) == calls_after_inspection
+
+
+def test_classify_human_output_and_revision_filter(
+    tmp_path: Path, cli_provider: FakeProvider
+) -> None:
+    db = tmp_path / "records.db"
+    invoke(db, "inspect", EXAMPLE_URL, "--revision", "main", "--json")
+
+    result = invoke(db, "classify", f"{EXAMPLE_URL}/tree/main")
+    assert result.exit_code == 0, result.output
+    assert "standard_whisper_candidate" in result.stdout
+    assert "Rule-based assessment only" in result.stdout
+    assert "Reasons" in result.stdout
+    assert "Evidence" in result.stdout
+
+
+def test_classify_missing_record_exits_one(tmp_path: Path) -> None:
+    result = invoke(tmp_path / "records.db", "classify", "owner/missing", "--json")
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["error"]["code"] == "record_not_found"
+
+
 def test_show_missing_record_exits_one(tmp_path: Path) -> None:
     result = invoke(tmp_path / "records.db", "show", "owner/missing", "--json")
     assert result.exit_code == 1

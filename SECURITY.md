@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Security fixes are applied to the current `0.1.x` Stage 1 line. Earlier development
-snapshots are not supported.
+Security fixes are applied to the current `0.1.x` line, which implements Stages 1–2.
+Earlier development snapshots are not supported.
 
 ## Reporting a vulnerability
 
@@ -42,7 +42,7 @@ In scope:
 - denial of service caused directly by untrusted metadata handling;
 - unsafe terminal rendering of model-card content.
 
-Out of scope for Stage 1:
+Out of scope for Stages 1–2:
 
 - vulnerabilities in Hugging Face services or model repositories themselves;
 - risks from running a model or executing repository code (not implemented);

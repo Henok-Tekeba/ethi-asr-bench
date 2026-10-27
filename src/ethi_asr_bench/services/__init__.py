@@ -7,6 +7,7 @@ from ethi_asr_bench.services.batch import (
     BatchSummary,
     run_batch,
 )
+from ethi_asr_bench.services.classifier import classify_record
 from ethi_asr_bench.services.inspection import InspectionOutcome, InspectionService
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "BatchSummary",
     "InspectionOutcome",
     "InspectionService",
+    "classify_record",
     "run_batch",
 ]

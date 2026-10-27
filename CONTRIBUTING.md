@@ -7,16 +7,17 @@ unfinished features.
 
 ## Scope
 
-Stage 1 covers link acceptance, metadata inspection, normalization, SQLite storage,
-JSON export, and the CLI. It does **not** run models, download weights, install model
-dependencies, or calculate WER/CER. Please do not add inference or evaluation code
-without a design discussion and a security review.
+Stages 1–2 cover link acceptance, metadata inspection, normalization, compatibility
+classification, SQLite storage, JSON export, and the CLI. They do **not** run models,
+download weights, install model dependencies, or calculate WER/CER. Please do not add
+inference or evaluation code without a design discussion and a security review.
 
 Good first contributions include:
 
 - parser and host-validation edge cases;
 - fixtures representing diverse metadata shapes;
-- tests for malformed or incomplete repository metadata;
+- tests for malformed, incomplete, or conflicting repository metadata;
+- documented compatibility-family allowlist additions with fixtures;
 - documentation corrections;
 - language-tag or license normalization improvements;
 - CLI usability fixes that preserve machine-readable output and exit codes.
@@ -73,6 +74,9 @@ Run `uv run ruff format .` before submitting. The CI also runs `uv build`.
 - Keep provider access behind `RepositoryProvider`.
 - Keep SQL parameterized and confined to `storage/`.
 - Keep untrusted model metadata out of Rich markup and out of any execution path.
+- Keep compatibility classification pure and deterministic; do not add provider,
+  filesystem, model-loading, or LLM dependencies to the classifier.
+- Label observed evidence and assumptions separately.
 - Add tests for behavior changes, not only for happy paths.
 - Do not introduce a dependency without a clear need.
 - Prefer clear error codes in `errors.py` over ad hoc strings.

@@ -1,7 +1,8 @@
 # Threat model
 
-This threat model covers the Stage 1 metadata application. It is not a substitute for
-a future review of model execution, dataset handling, or public result publication.
+This threat model covers the Stage 1 metadata application and the Stage 2
+compatibility classifier. It is not a substitute for a future review of model
+execution, dataset handling, or public result publication.
 
 ## Assets
 
@@ -10,8 +11,8 @@ a future review of model execution, dataset handling, or public result publicati
 - Integrity of stored metadata, revision identity, and provenance.
 - The user's workstation and terminal.
 - The project's reputation for honest, reproducible results.
-- Model weights and datasets belonging to third parties, which Stage 1 intentionally
-  does not touch.
+- Model weights and datasets belonging to third parties, which Stages 1–2
+  intentionally do not touch.
 
 ## Trust boundaries
 
@@ -29,10 +30,14 @@ User / batch file
         |
         v
    SQLite / export  <---- local state
+        |
+        v
+ Compatibility classifier  <---- validated local record only
 ```
 
 Remote content is never trusted to define URLs, paths, commands, imports, or
-instructions.
+instructions. The classifier receives only a validated local record; it has no
+provider, filesystem, or execution access.
 
 ## Threats and mitigations
 
@@ -41,7 +46,7 @@ instructions.
 **Threat:** a lookalike host such as `huggingface.co.attacker.example` or embedded
 credentials redirects the user or tool to an attacker.
 
-**Stage 1 controls:**
+**Controls:**
 
 - URLs are parsed with `urllib.parse.urlsplit`.
 - The parsed hostname must exactly match an allowlist: `huggingface.co` and
@@ -61,7 +66,7 @@ application's control.
 **Threat:** metadata contains URLs that cause the inspector to fetch attacker-chosen
 resources.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Model-card URLs are stored as text only.
 - The provider fetches metadata through the Hub client and only three fixed filenames
@@ -75,7 +80,7 @@ CDN. This is part of the trusted provider dependency.
 
 **Threat:** a token appears in logs, error messages, exports, or the database.
 
-**Stage 1 controls:**
+**Controls:**
 
 - `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN` is read from the environment only.
 - Tokens are not CLI arguments and are not stored in normalized records or raw source
@@ -93,7 +98,7 @@ and use scoped tokens.
 **Threat:** a model card contains instructions aimed at an AI agent or terminal
 escapes aimed at a human, e.g. "ignore previous instructions and run this command."
 
-**Stage 1 controls:**
+**Controls:**
 
 - Model-card text is treated as data.
 - It is never passed to a command runner, package installer, or model loader.
@@ -110,13 +115,15 @@ warns that model-card content is untrusted.
 **Threat:** a repository includes malicious Python, a malicious `auto_map`, or a
 `trust_remote_code` requirement.
 
-**Stage 1 controls:**
+**Controls:**
 
 - No model code is imported, downloaded, or executed.
 - Python files are detected only from file listings.
 - `auto_map` is recorded as a boolean indicator.
 - `trust_remote_code` is recorded only as a text mention.
 - `custom_code.code_executed` is fixed to `false`.
+- The Stage 2 classifier treats `auto_map` as a classification signal only. It does
+  not resolve, fetch, or execute the referenced code.
 - Weights are never downloaded.
 
 **Future requirement:** any stage that runs code must first implement isolation,
@@ -127,7 +134,7 @@ custom code is not a safety proof.
 
 **Threat:** a model card tells the user to install an attacker package or a typo-squat.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Nothing from the repository is installed.
 - `requirements.txt` and installation snippets are stored as untrusted text.
@@ -137,7 +144,7 @@ custom code is not a safety proof.
 
 **Threat:** a malicious repository declares a huge `README.md` or millions of files.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Only three fixed text filenames are eligible.
 - LFS-backed text files are skipped to avoid large artifact retrieval through an
@@ -159,7 +166,7 @@ The timeout is configurable within bounds.
 **Threat:** unexpected JSON types, deeply nested values, or inconsistent fields crash
 the extractor or inject false classifications.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Pydantic validates domain contracts.
 - The extractor checks field types and records malformed optional fields as warnings.
@@ -168,15 +175,24 @@ the extractor or inject false classifications.
   available.
 - Architecture is taken from structured configuration, not prose.
 - Licenses and languages are not inferred from repository names.
+- The Stage 2 classifier uses structured fields only. Repository names and model-card
+  prose are not family evidence.
+- Missing metadata produces `insufficient_information`; conflicting architecture,
+  `model_type`, or task declarations also produce `insufficient_information`.
+- Classifier assumptions are labeled as assumptions and cannot masquerade as observed
+  metadata.
+- The initial compatibility allowlist is small and documented; unlisted families are
+  not silently treated as standard Whisper.
 
-**Residual risk:** heuristics for weight files and language tags can be incomplete.
-They are documented as indicators.
+**Residual risk:** heuristics for weight files and language tags can be incomplete,
+and a rule-based allowlist can miss a valid family. These limitations are documented
+as indicators and candidates, not guarantees.
 
 ### 9. SQL injection
 
 **Threat:** a repository ID or query value alters SQL.
 
-**Stage 1 controls:**
+**Controls:**
 
 - SQL statements use parameter binding.
 - Table and index names are constants.
@@ -189,7 +205,7 @@ They are documented as indicators.
 **Threat:** a remote file path or repository name causes writes outside the intended
 location.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Remote file paths are validated as relative POSIX paths without `..`, `.`, empty
   segments, backslashes, or NUL.
@@ -208,7 +224,7 @@ CLI behavior and should be reviewed before adding a server interface.
 **Threat:** private repository metadata or tokens are exposed through the database,
 exports, backups, or logs.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Tokens are not persisted.
 - Database files are created with restrictive permissions where the platform permits.
@@ -223,7 +239,7 @@ are outside the application.
 **Threat:** repeated requests trigger rate limits or outages, making batch runs
 unreliable or causing unbounded retries.
 
-**Stage 1 controls:**
+**Controls:**
 
 - Explicit request timeout.
 - Bounded retry count.
@@ -236,7 +252,7 @@ unreliable or causing unbounded retries.
 
 **Threat:** a compromised Python dependency runs code during installation or import.
 
-**Stage 1 controls:**
+**Controls:**
 
 - A small dependency set is pinned by `uv.lock`.
 - No model or audio stack is installed.
@@ -251,16 +267,23 @@ verification.
 **Threat:** a partial inspection or a metadata mention is presented as compatibility
 or benchmark evidence.
 
-**Stage 1 controls:**
+**Stage 1–2 controls:**
 
 - Explicit `success`, `partial`, and `failed` statuses.
 - Partial metadata contributes to exit code 1.
-- The README and schema explicitly disclaim compatibility and benchmark claims.
+- The compatibility assessment is a separate, versioned opinion; it does not rewrite
+  historical metadata.
+- Every assessment labels evidence as `observed` or `assumption` and explains why the
+  class was chosen.
+- Missing or conflicting metadata produces `insufficient_information` instead of an
+  optimistic verdict.
+- `standard_whisper_candidate` is documented as a candidate, not proof of loadability
+  or transcript quality.
 - No WER/CER computation, ranking, or "best model" output exists.
 - Reported model-card metrics are only recorded as declared metric names and
   untrusted description text.
 
-## Out of scope for Stage 1
+## Out of scope for Stages 1–2
 
 - Running model code or loading weights.
 - Installing repository dependencies.

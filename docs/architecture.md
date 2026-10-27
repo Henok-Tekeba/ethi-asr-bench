@@ -1,7 +1,8 @@
 # Architecture
 
-This document describes the Stage 1 implementation and the boundaries intended to
-support later compatibility classification, isolated execution, and evaluation.
+This document describes the implemented Stage 1 metadata foundation and Stage 2
+compatibility classifier, plus the boundaries intended to support isolated execution
+and evaluation later.
 
 ## Design goals
 
@@ -21,11 +22,13 @@ src/ethi_asr_bench/
 ├── errors.py                      Stable error codes and categories
 ├── utils.py                       UTC formatting, truncation, redaction
 ├── models/
-│   └── repository.py              Versioned Pydantic domain contracts
+│   ├── repository.py              Versioned Pydantic inspection contracts
+│   └── compatibility.py           Versioned compatibility assessment contract
 ├── services/
 │   ├── link_parser.py             Validation, canonicalization, batch parsing
 │   ├── inspection.py              Provider → extractor → store orchestration
 │   ├── metadata_extractor.py      Conservative normalization and classification
+│   ├── classifier.py              Deterministic compatibility rules and evidence
 │   ├── batch.py                   Per-input results and summaries
 │   └── exporter.py                Export envelope and atomic JSON writing
 ├── providers/
@@ -101,6 +104,28 @@ The batch layer receives a `ParseResult` from `link_parser`:
 Raw provider metadata is included only on request. Writing uses a temporary file in
 the destination directory and `os.replace`, avoiding partially written exports.
 
+### Compatibility classification
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI
+    participant Store
+    participant Classifier
+
+    User->>CLI: classify owner/model --json
+    CLI->>Store: get_latest(repo_id, revision)
+    Store-->>CLI: StoredInspection (validated Stage 1 record)
+    CLI->>Classifier: classify_record(record)
+    Classifier-->>CLI: CompatibilityAssessment
+    CLI-->>User: classification, evidence, reasons, warnings
+```
+
+The classifier is a pure function of a validated `InspectionRecord`. It has no
+provider dependency, performs no network access, and does not read repository files.
+Assessments are derived on demand rather than stored, so classification does not
+change the Stage 1 schema or SQLite contents.
+
 ## Trust boundaries
 
 | Boundary | Trust | Control |
@@ -111,6 +136,7 @@ the destination directory and `os.replace`, avoiding partially written exports.
 | Model card text | Untrusted | Stored as descriptive text; escaped for terminal display; never interpreted as instructions. |
 | Repository files | Untrusted | Inventory only. Only three fixed, non-LFS text filenames may be fetched, with size limits. |
 | SQLite content | Locally trusted but validated on read | Parameterized SQL, schema validation on load. |
+| Stored record → classifier | Validated local data | Rule-based, deterministic, no provider or filesystem access; observed facts and assumptions are labeled separately. |
 | Environment | Secret-bearing | Token is read into memory only; never persisted or logged. |
 
 ## Link acceptance
@@ -228,6 +254,10 @@ Consequences:
 Schema migrations are forward-only and tracked with `PRAGMA user_version`. The
 application refuses a database whose schema is newer than it understands.
 
+Stage 2 deliberately adds no table for compatibility assessments. `classify` reads a
+stored record and derives an assessment deterministically; the historical record is
+left unchanged. This preserves Stage 1 database compatibility.
+
 ## Extension points
 
 ### Adding a provider
@@ -246,10 +276,20 @@ identity is recorded in `provenance.provider`.
 
 ### Compatibility classification
 
-A later classifier should consume stored `InspectionRecord` objects and emit a
-separate classification record with its own schema and evidence. It must not mutate
-historical metadata. Missing structured facts should produce `unknown`, not a guessed
-class.
+`services/classifier.py` consumes a validated stored `InspectionRecord` and returns a
+versioned `CompatibilityAssessment`. It never mutates historical metadata and never
+calls a provider. The contract separates `observed` evidence from `assumption`
+evidence, and every verdict carries at least one observed item.
+
+The rule order and initial architecture allowlist are documented in
+[`compatibility.md`](compatibility.md). Missing or conflicting structured facts
+produce `insufficient_information`, not a guessed class. Adding a recognized family
+requires a fixture, an allowlist change, a test, and documentation; changing the
+meaning of an existing class requires a classifier-version bump.
+
+The assessment is derived on demand, so it is not exported with Stage 1 records. A
+future version may add an explicit export option or a separate assessment store, but
+that would be a new contract rather than a silent mutation of `schema_version` 1.0.0.
 
 ### Isolated execution and evaluation
 
@@ -266,6 +306,8 @@ code is executed. See [`threat-model.md`](threat-model.md).
 - Storage errors: propagate, exit code 3.
 - Unexpected internal errors: not reported as success; a failed record is stored where
   possible.
+- Classification: a missing stored record exits 1; a valid assessment, including
+  `insufficient_information`, exits 0 because the command succeeded.
 
 No exception is silently swallowed. Provider and extraction boundaries log without
 including tokens.

@@ -27,6 +27,11 @@ from ethi_asr_bench.errors import (
     RecordNotFoundError,
     exit_code_for,
 )
+from ethi_asr_bench.models.compatibility import (
+    CompatibilityAssessment,
+    CompatibilityClass,
+    EvidenceKind,
+)
 from ethi_asr_bench.models.repository import (
     InspectionRecord,
     ObservedValue,
@@ -41,6 +46,7 @@ from ethi_asr_bench.services.batch import (
     report_without_inspection,
     run_batch,
 )
+from ethi_asr_bench.services.classifier import classify_record
 from ethi_asr_bench.services.exporter import (
     build_export_payload,
     serialize_export,
@@ -60,8 +66,8 @@ from ethi_asr_bench.utils import format_utc, safe_json_dumps, utc_now
 app = typer.Typer(
     name="ethi-asr",
     help=(
-        "Discover and inspect Amharic ASR model metadata. "
-        "Stage 1 retrieves metadata only: it does not download weights or run models."
+        "Discover and inspect Amharic ASR model metadata, then classify likely inference "
+        "compatibility. No weights are downloaded and no model code is executed."
     ),
     no_args_is_help=True,
     add_completion=False,
@@ -293,6 +299,39 @@ def show(
             _print_json(record_payload)
         return
     _render_record(stored.record, show_description=True)
+
+
+@app.command()
+def classify(
+    ctx: typer.Context,
+    repository: Annotated[str, typer.Argument(help="Stored repository ID or Hugging Face URL.")],
+    revision: Annotated[
+        str | None,
+        typer.Option("--revision", "-r", help="Filter by requested revision or commit prefix."),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit the compatibility assessment as JSON.")
+    ] = False,
+) -> None:
+    """Classify a stored inspection without loading weights or running the model."""
+    state = _state(ctx)
+    try:
+        ref = parse_repository_target(repository, revision=revision)
+        with open_store(state.settings.db_path) as store:
+            stored = store.get_latest(ref.repo_id, revision=ref.revision)
+        if stored is None:
+            raise RecordNotFoundError(
+                f"No stored inspection found for {ref.repo_id!r}"
+                + (f" at revision {ref.revision!r}." if ref.revision else ".")
+            )
+    except EthiAsrBenchError as exc:
+        _abort(exc, json_output=json_output)
+
+    assessment = classify_record(stored.record)
+    if json_output:
+        _print_json(assessment.model_dump(mode="json", exclude_none=True))
+        return
+    _render_assessment(assessment)
 
 
 @app.command()
@@ -621,6 +660,61 @@ def _render_record(record: InspectionRecord, *, show_description: bool) -> None:
         stdout_console.print("[bold red]Errors[/bold red]")
         for error in record.errors:
             stdout_console.print(f"  [red]{_safe(error.code)}[/red]: {_safe(error.message)}")
+
+
+def _render_assessment(assessment: CompatibilityAssessment) -> None:
+    style = {
+        CompatibilityClass.STANDARD_WHISPER_CANDIDATE: "green",
+        CompatibilityClass.KNOWN_VARIATION: "cyan",
+        CompatibilityClass.CUSTOM_IMPLEMENTATION_REQUIRED: "yellow",
+        CompatibilityClass.INSUFFICIENT_INFORMATION: "dim",
+    }[assessment.classification]
+    table = Table(title="Compatibility assessment", show_header=False, box=None, pad_edge=False)
+    table.add_column("Field", style="bold cyan", no_wrap=True)
+    table.add_column("Value")
+    table.add_row("Repository", Text(_plain_safe(assessment.repo_id)))
+    table.add_row("Resolved commit", Text(assessment.resolved_commit or "unresolved"))
+    table.add_row("Inspection status", Text(assessment.inspection_status.value))
+    table.add_row("Inspection schema", Text(assessment.inspection_schema_version))
+    table.add_row("Classifier version", Text(assessment.classifier_version))
+    table.add_row(
+        "Classification",
+        Text(assessment.classification.value, style=style),
+    )
+    stdout_console.print(table)
+
+    stdout_console.print("[bold]Reasons[/bold]")
+    for reason in assessment.reasons:
+        stdout_console.print(f"  - {_safe(reason)}")
+
+    if assessment.evidence:
+        evidence_table = Table(title="Evidence", box=None)
+        evidence_table.add_column("Kind")
+        evidence_table.add_column("Rule")
+        evidence_table.add_column("Signal")
+        evidence_table.add_column("Value")
+        evidence_table.add_column("Source")
+        for item in assessment.evidence:
+            kind_style = "cyan" if item.kind is EvidenceKind.OBSERVED else "dim"
+            evidence_table.add_row(
+                Text(item.kind.value, style=kind_style),
+                Text(_plain_safe(item.rule)),
+                Text(_plain_safe(item.signal)),
+                Text(_plain_safe(item.value)),
+                Text(_plain_safe(item.source or "-")),
+            )
+        stdout_console.print(evidence_table)
+
+    if assessment.warnings:
+        stdout_console.print("[bold]Warnings[/bold]")
+        for warning in assessment.warnings:
+            stdout_console.print(
+                f"  [yellow]{_safe(warning.code)}[/yellow]: {_safe(warning.message)}"
+            )
+    stdout_console.print(
+        "[dim]Rule-based assessment only; no model weights were downloaded and no model "
+        "code was executed.[/dim]"
+    )
 
 
 def _observed_text(value: ObservedValue[Any]) -> str:

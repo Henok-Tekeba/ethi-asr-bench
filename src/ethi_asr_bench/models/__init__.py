@@ -1,5 +1,13 @@
 """Public domain models."""
 
+from ethi_asr_bench.models.compatibility import (
+    CLASSIFIER_VERSION,
+    CompatibilityAssessment,
+    CompatibilityClass,
+    CompatibilityEvidence,
+    CompatibilityWarning,
+    EvidenceKind,
+)
 from ethi_asr_bench.models.repository import (
     SCHEMA_VERSION,
     CustomCodeIndicators,
@@ -23,9 +31,15 @@ from ethi_asr_bench.models.repository import (
 )
 
 __all__ = [
+    "CLASSIFIER_VERSION",
     "SCHEMA_VERSION",
+    "CompatibilityAssessment",
+    "CompatibilityClass",
+    "CompatibilityEvidence",
+    "CompatibilityWarning",
     "CustomCodeIndicators",
     "DependencyIndicators",
+    "EvidenceKind",
     "FieldProvenance",
     "InspectionError",
     "InspectionRecord",

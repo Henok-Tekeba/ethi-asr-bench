@@ -3,10 +3,11 @@
 Open-source infrastructure for discovering, inspecting, and eventually benchmarking
 Amharic automatic speech recognition (ASR) models.
 
-> **Project status: v0.1.0 — Stage 1 metadata foundation.** This release identifies and
+> **Project status: Stage 2 complete — compatibility classification.** Stage 1 identifies and
 > inspects Hugging Face model repositories and stores normalized metadata locally.
-> It does **not** run models, measure audio quality, calculate WER/CER, or publish
-> benchmark rankings.
+> Stage 2 adds deterministic, rule-based classification of likely inference
+> compatibility from that stored metadata. Neither stage runs models, downloads model
+> weights, measures audio quality, calculates WER/CER, or publishes benchmark rankings.
 
 ## Why this project exists
 
@@ -26,6 +27,9 @@ questions:
 - Does the repository depend on custom Python code?
 - What did the source metadata say at a specific commit?
 - Which failures occurred while retrieving it?
+- Is the model a likely standard Whisper candidate, a known ASR variation, or does it
+  require a custom implementation?
+- Which structured facts support that classification, and which parts are assumptions?
 
 EthiASR Bench starts there. It treats model discovery and metadata normalization as
 the first reusable layer of a longer evaluation pipeline, rather than as a one-off
@@ -54,22 +58,46 @@ script for a single model.
 - Never downloads weights, installs repository dependencies, or executes repository
   code.
 
+## What Stage 2 implements
+
+- Classifies a stored inspection into one of four explicit compatibility classes:
+  `standard_whisper_candidate`, `known_variation`,
+  `custom_implementation_required`, or `insufficient_information`.
+- Uses structured architecture, `model_type`, task, library, `auto_map`, and file
+  inventory signals. Model-card prose and repository names are never architecture
+  evidence.
+- Separates `observed` evidence from classifier `assumptions`.
+- Produces deterministic reasons, evidence, warnings, and a classifier version.
+- Treats missing or conflicting metadata as `insufficient_information`, not as proof
+  of incompatibility.
+- Computes assessments on demand from Stage 1 records. It does not mutate stored
+  metadata or require a database migration.
+- Exposes the assessment through `ethi-asr classify`.
+- Still downloads no weights, installs no repository dependencies, and executes no
+  repository code.
+
+The detailed rules and limitations are documented in
+[`docs/compatibility.md`](docs/compatibility.md).
+
 Reference model for examples:
 [`b1n1yam/shook-medium-amharic-2k`](https://huggingface.co/b1n1yam/shook-medium-amharic-2k).
 
-## Explicit non-goals for Stage 1
+## Explicit non-goals for Stages 1–2
 
-Stage 1 does **not**:
+Stages 1–2 do **not**:
 
 - download model weights or run inference;
 - install dependencies declared by model authors;
 - execute Python files from a repository;
 - enable `trust_remote_code`;
-- decide whether a model is compatible with this project;
+- prove that a model will load or produce correct transcripts;
 - claim that a model is Whisper merely because a description mentions Whisper;
 - evaluate audio, calculate WER/CER, or produce rankings;
 - require a GPU, PyTorch, Transformers, `torchaudio`, or audio libraries;
 - provide a web server, frontend, queue, or distributed scheduler.
+
+A compatibility class is a reviewable candidate, not a benchmark result or a
+loadability guarantee.
 
 ## Quick start
 
@@ -112,6 +140,7 @@ uv run ethi-asr inspect https://huggingface.co/b1n1yam/shook-medium-amharic-2k
 uv run ethi-asr inspect b1n1yam/shook-medium-amharic-2k --json
 uv run ethi-asr list
 uv run ethi-asr show b1n1yam/shook-medium-amharic-2k
+uv run ethi-asr classify b1n1yam/shook-medium-amharic-2k
 ```
 
 The default database is:
@@ -240,6 +269,46 @@ requested revision, a full commit SHA, or a commit prefix. Revision-pinned URLs 
 rejected by `delete` and `export --repo` because those commands operate on all stored
 revisions for a repository.
 
+### Classify compatibility
+
+```bash
+uv run ethi-asr classify b1n1yam/shook-medium-amharic-2k
+uv run ethi-asr classify b1n1yam/shook-medium-amharic-2k --json
+uv run ethi-asr classify b1n1yam/shook-medium-amharic-2k --revision main
+```
+
+`classify` reads the latest matching local inspection. It does not contact Hugging
+Face, download files, load weights, or run model code. Run `inspect` first if the
+repository is not stored locally. A typical human-readable result is:
+
+```text
+Compatibility assessment
+Repository          b1n1yam/shook-medium-amharic-2k
+Resolved commit     60b7ae174266ed42362ee02e636aea144011378d
+Inspection status   success
+Inspection schema   1.0.0
+Classifier version  1.0.0
+Classification      standard_whisper_candidate
+
+Reasons
+  - Structured metadata declares a Whisper architecture or Whisper model_type.
+  - No auto_map custom loader declaration was observed.
+  - This is a candidate for a standard Whisper path; compatibility is not proven.
+```
+
+The four classes are:
+
+| Class | Meaning |
+| ----- | ------- |
+| `standard_whisper_candidate` | Structured Whisper metadata is a candidate for a future standard Transformers Whisper path. No inference has been run. |
+| `known_variation` | A recognized non-Whisper ASR family, or a Whisper-family record whose declared runtime differs from the standard Transformers path. A family-specific adapter would be needed. |
+| `custom_implementation_required` | `auto_map` is declared, or the structured architecture is outside the initial ASR allowlist. A custom or out-of-scope implementation would be required. |
+| `insufficient_information` | Structured metadata is missing, malformed, or conflicting, including a known ASR architecture paired with an explicitly non-ASR pipeline. No compatibility conclusion is asserted. |
+
+`--json` emits the versioned assessment object, including every observed or assumed
+evidence item, reasons, and warnings. See
+[`docs/compatibility.md`](docs/compatibility.md) for the exact rule order.
+
 ### Export JSON
 
 ```bash
@@ -289,7 +358,9 @@ line arguments.
 | `3` | Local persistence, export, or unexpected internal failure. |
 
 For a mixed batch, exit code `2` takes precedence over `1` because some inputs were
-unusable. `partial` inspections are never reported as successful.
+unusable. `partial` inspections are never reported as successful. `classify` exits
+`0` when it produces a valid assessment, including `insufficient_information`; it
+exits `1` when the requested local inspection does not exist.
 
 ### JSON output
 
@@ -329,6 +400,34 @@ Human-readable diagnostics are written to stderr; JSON is written to stdout. Fat
 command errors (for example, an unreadable batch file) use
 `{"status": "error", "error": {...}}`; per-repository inspection failures use the
 results envelope above.
+
+`classify --json` emits one assessment object:
+
+```json
+{
+  "classifier_version": "1.0.0",
+  "classification": "standard_whisper_candidate",
+  "repo_id": "b1n1yam/shook-medium-amharic-2k",
+  "resolved_commit": "60b7ae174266ed42362ee02e636aea144011378d",
+  "inspection_schema_version": "1.0.0",
+  "inspection_status": "success",
+  "reasons": ["..."],
+  "evidence": [
+    {
+      "rule": "model.model_type",
+      "kind": "observed",
+      "signal": "model.model_type",
+      "value": "whisper",
+      "source": "config.json.model_type",
+      "message": "A structured model_type was observed."
+    }
+  ],
+  "warnings": []
+}
+```
+
+Evidence with `"kind": "assumption"` is an inference made by the classifier. It is
+never presented as an observed fact.
 
 ## Example normalized metadata
 
@@ -450,20 +549,23 @@ flowchart LR
     G --> I[(SQLite store)]
     F --> I
     I --> J[list / show / export]
+    I --> K[Compatibility classifier]
     H --> A3[CLI exit code and JSON]
     J --> A3
+    K -->|derived assessment| A3
 ```
 
 The code is split into:
 
 | Layer | Location | Responsibility |
 | ----- | -------- | -------------- |
-| Domain models | `src/ethi_asr_bench/models/` | Versioned Pydantic records, value states, provenance |
+| Domain models | `src/ethi_asr_bench/models/` | Versioned Pydantic records, compatibility assessments, value states, provenance |
 | Link acceptance | `src/ethi_asr_bench/services/link_parser.py` | Host/path/revision validation, batch parsing, deduplication |
 | Providers | `src/ethi_asr_bench/providers/` | Remote metadata retrieval behind a replaceable protocol |
 | Extraction | `src/ethi_asr_bench/services/metadata_extractor.py` | Conservative normalization, warnings, file classification |
+| Compatibility | `src/ethi_asr_bench/services/classifier.py` | Deterministic rules, evidence, and assumptions from stored records |
 | Persistence | `src/ethi_asr_bench/storage/` | SQLite schema, migrations, revision-aware store |
-| Orchestration | `src/ethi_asr_bench/services/` | Inspection flow, batch processing, export |
+| Orchestration | `src/ethi_asr_bench/services/` | Inspection flow, batch processing, classification, export |
 | Interface | `src/ethi_asr_bench/cli.py` | Typer commands, Rich rendering, exit codes |
 
 The provider boundary is deliberate: a second registry can be added without changing
@@ -489,7 +591,7 @@ extension points.
 | uv | Reproducible environment resolution with a committed `uv.lock`. |
 | GitHub Actions | Repeatable lint, type-check, and test runs. |
 
-No inference, audio, or GPU dependencies are installed in this stage.
+No inference, audio, or GPU dependencies are installed in Stages 1–2.
 
 ## Data handling and local state
 
@@ -502,6 +604,8 @@ No inference, audio, or GPU dependencies are installed in this stage.
   existing row instead of creating duplicates.
 - A new commit creates a new row; earlier commits remain available.
 - Failed attempts are stored with structured error codes and messages.
+- Compatibility assessments are derived on demand and are not persisted. Stage 2
+  therefore adds no database table and no schema migration.
 - Credentials are never stored. `HF_TOKEN` is read from the environment.
 - The database and exports are local files. Protect them according to your own data
   policy, especially when inspecting private repositories.
@@ -549,19 +653,22 @@ Model repositories and their metadata are treated as untrusted.
 - File paths advertised by a repository are validated before inventory storage and
   are never used for local reads.
 - Tokens are redacted from stored provider error messages.
+- The Stage 2 classifier consumes validated local records only. It does not resolve
+  `auto_map`, follow links, install packages, or load model code.
 
-Stage 1 does not need a sandbox because it does not execute remote code. Any future
+Stages 1–2 do not need a sandbox because they do not execute remote code. Any future
 inference stage must design isolation first. See
 [`docs/threat-model.md`](docs/threat-model.md) and [`SECURITY.md`](SECURITY.md).
 
 ## Known limitations
 
 - Only Hugging Face model repositories are supported.
-- Stage 1 is designed around public repositories. A user-supplied token may permit
-  access to private repository metadata, which then remains in local state; no private
-  dataset or model-weight access is attempted.
-- Language, license, architecture, and compatibility are not inferred from prose or
-  repository names. Missing structured declarations remain `unknown`.
+- Stages 1–2 are designed around public repositories. A user-supplied token may
+  permit access to private repository metadata, which then remains in local state; no
+  private dataset or model-weight access is attempted.
+- Language, license, architecture, and compatibility are never inferred from prose or
+  repository names. Missing structured declarations remain `unknown`, and the
+  classifier returns `insufficient_information` rather than guessing.
 - Language-tag recognition uses an ISO 639 allowlist and can miss unusual or
   misspelled tags.
 - Weight-file detection is filename-based. It is useful as an indicator, not as a
@@ -579,17 +686,24 @@ inference stage must design isolation first. See
   project will add explicit schema migrations before changing stored contracts.
 - A partial inspection means one or more requested/expected facts could not be
   retrieved or normalized. It does not mean a model is broken.
-- No compatibility judgment is made from `transformersInfo`, tags, or file names.
+- Compatibility classification uses a deliberately small initial architecture
+  allowlist. A recognized model can still fail to load, and an unlisted model can
+  still be usable through an implementation this classifier does not know about.
+- Task tags can establish that a repository declares ASR, but they cannot replace a
+  structured architecture. File inventory can add warnings; it does not by itself
+  change the compatibility class.
+- `standard_whisper_candidate` is not a promise of successful inference. Stage 2 does
+  not test tokenizer behavior, audio preprocessing, decoding, or output quality.
 
 ## Roadmap
 
-Stage 1 is complete only as a metadata foundation. Later stages are not implemented.
+Stages 1 and 2 are implemented. Later stages are not.
 
-1. **Stage 1 — Metadata foundation (current).** Link acceptance, provider abstraction,
+1. **Stage 1 — Metadata foundation (complete).** Link acceptance, provider abstraction,
    normalized records, SQLite history, JSON export, tests, docs, CI.
-2. **Stage 2 — Compatibility classification.** Derive explicit, source-backed
-   compatibility classes from structured configuration and weight formats. Add
-   fixture-based classifier tests. Never execute code.
+2. **Stage 2 — Compatibility classification (complete).** Deterministic, source-backed
+   compatibility assessments with observed evidence, assumptions, warnings, and a
+   versioned contract. No model code is executed and no database migration is needed.
 3. **Stage 3 — Isolated execution environments.** Design sandboxing, dependency
    isolation, network policy, resource limits, and artifact provenance before any
    custom model code runs.
@@ -626,6 +740,7 @@ Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). Security reports should follow
 
 - [Architecture](docs/architecture.md)
 - [Metadata schema](docs/metadata-schema.md)
+- [Compatibility rules](docs/compatibility.md)
 - [Roadmap](docs/roadmap.md)
 - [Threat model](docs/threat-model.md)
 - [Contributing](CONTRIBUTING.md)

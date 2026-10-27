@@ -1,13 +1,17 @@
 # Metadata schema
 
 - **Schema version:** `1.0.0`
-- **Application status:** Stage 1
+- **Application status:** Stages 1–2
 - **Contract location:** `src/ethi_asr_bench/models/repository.py`
 - **Persistence:** normalized JSON in SQLite (`inspections.record_json`)
 - **Export:** JSON records wrapped in a versioned export envelope
 
 This document describes the normalized record produced by inspecting one repository
 revision. It is a data contract, not a compatibility or accuracy claim.
+
+Compatibility classification is a separate derived contract in
+`src/ethi_asr_bench/models/compatibility.py`; it does not change this record schema.
+See [`compatibility.md`](compatibility.md).
 
 ## Versioning policy
 
@@ -23,6 +27,23 @@ revision. It is a data contract, not a compatibility or accuracy claim.
   different semantics.
 
 The export envelope has its own `export_format_version`, currently `1.0.0`.
+
+## Separate compatibility assessment
+
+Stage 2 adds a versioned `CompatibilityAssessment` contract with its own
+`classifier_version` (`1.0.0`). It is derived from a validated record and contains:
+
+- `classification`
+- `repo_id`, `resolved_commit`, `inspection_schema_version`, and
+  `inspection_status`
+- `reasons`
+- `evidence[]`, with `kind` set to `observed` or `assumption`
+- `warnings[]`
+
+The assessment is not embedded in `InspectionRecord`, is not stored in SQLite, and is
+not added to the default export. This is intentional: classification opinions can
+change independently of historical facts. Stage 2 therefore requires no database
+migration and preserves the readability of all Stage 1 records.
 
 ## Top-level structure
 
@@ -252,7 +273,8 @@ The SQLite `inspections` table stores:
 - first error code/message for diagnostics.
 
 Raw source metadata is not part of the normalized record. It is included in an export
-only with `--include-raw`.
+only with `--include-raw`. Compatibility assessments are not part of the Stage 1
+export; use `ethi-asr classify --json` to produce one.
 
 The export envelope:
 
